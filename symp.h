@@ -10,7 +10,14 @@ namespace symp {
 
     int Send( const std::string &receiver_name, 
             size_t message_length, char message[], 
-            size_t &reply_message_length, char reply_message[], const int32_t wait_ms = 0 );
+            size_t &reply_message_length, char reply_message[], 
+            const int32_t wait_ms = 0 );
+
+/*
+    int Send( const std::string &receiver_name, 
+            size_t message_length, char message[], 
+            const int32_t wait_ms = 0 );
+*/
 
     int Receive( size_t &message_length, char message[], std::string &sender_name, const int32_t wait_ms = 0 );
 
