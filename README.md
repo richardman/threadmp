@@ -1,4 +1,4 @@
-# ThreadMP, a synchronous message passing API forstd::thread
+# ThreadMP, a synchronous message passing API for std::thread
 ThreadMP provides synchronous message passing functions for C++ std::thread. The API functions are simple to use:
 
 ```
