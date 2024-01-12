@@ -19,14 +19,14 @@ The API is especially useful for implementing protocols for a client-server syst
 Multiple senders may send messages to the receiver and the system handles all synchronization and queuing, e.g. a sender may send a request anytime regardless whether the server is listening for a request, processing a request, or  currently doing something else. 
 
 ## (JSON) Messages
-Messages are `std::string`. It is up to the communicating threads to interpret the content of the strings. It is recommended that JSON be used to implement the protocol, and serialization and deserialization routines be used to convert between the JSON objects and strings. While there are a number of JSON C++ libraries available, the author recommends nlohmann's header only JSON library. It is also recommended that JSON be used only for communications and any real processing should be done by extracting data from the JSON into native C++ data variables.
+Messages are `std::string`. It is up to the communicating threads to interpret the content of the strings. It is recommended that JSON be used to implement the protocol, and serialization and deserialization routines be used to convert between the JSON objects and strings. While there are a number of JSON C++ libraries available, the author recommends nlohmann's header only JSON library. It is also recommended that JSON be only used for communications and any real processing should be done by extracting data from the JSON into native C++ data variables.
 
 # Advantages
 - Synchronous message passing automatically provides synchronization between the threads
 - Implemented using standard C++ and all std::thread features can be used
 
 # How To Use
-A thread that uses this API must first register its name to the system. The name must be unique is the mean for the threads to identify message senders and receivers.
+A thread that uses this API must first register its name to the system. The name must be unique since it is the mean for the threads to identify message senders and receivers.
 
 `extern int threadmp::RegisterThread( const std::string &name );`
 
@@ -55,7 +55,7 @@ receives a message.
 
 # Limitations
 - Once a thread receives a message, it must reply to the sender, otherwise, the sender will remain blocked
-- Between the `Receive` and `Reply` calls, the thread should not any other ThreadMP API functions. e.g. it should not call `Send` or `Receive` again until it replies to the first sender
+- Between the `Receive` and `Reply` calls, the thread should not invoke any other ThreadMP API functions. e.g. it should not call `Send` or `Receive` again until it replies to the first sender
 - Messages are copied between the internal buffers, and may present a performance issue if the message size is very large
 
 # License
