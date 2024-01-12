@@ -14,12 +14,12 @@ namespace threadmp {
 }
 ```
 
-The API is especially useful for implementing protocols for a client-server system, where a server listens to incoming requests using the `threadmp::Receive` function, and clients sends requests using the `threadmp::Send` function. Once a server thread receives and processes a request, it sends a reply message to the client using the `threadmp::Reply` function and the client may continue its processing. The calling thread for these API functions blocks until the function returns.
+The API is especially useful for implementing protocols for a client-server system, where a server listens to incoming requests using the `threadmp::Receive` function, and clients send requests using the `threadmp::Send` function. Once a server thread receives and processes a request, it sends a reply message to the client using the `threadmp::Reply` function and the client may continue its processing. The calling threads for these API functions block until the function returns.
 
-Multiple senders may send messages to the receiver and the system handles all synchronization and queuing. 
+Multiple senders may send messages to the receiver and the system handles all synchronization and queuing, e.g. a sender may send a request anytime regardless whether the server is listening for a request, processing a request, or  currently doing something else. 
 
 ## (JSON) Messages
-Messages are `std::string`. It is up to the calling threads to interpret the content of the strings. It is recommended that JSON be used to implement the protocol, and serialization and deserialization routines be used to convert between the JSON objects and strings. While there are a number of JSON C++ libraries available, the author recommends nlohmann's header only JSON library. It is also recommended that JSON be used only for communications and any real processing should be done by extracting data from the JSON into native C++ data variables.
+Messages are `std::string`. It is up to the communicating threads to interpret the content of the strings. It is recommended that JSON be used to implement the protocol, and serialization and deserialization routines be used to convert between the JSON objects and strings. While there are a number of JSON C++ libraries available, the author recommends nlohmann's header only JSON library. It is also recommended that JSON be used only for communications and any real processing should be done by extracting data from the JSON into native C++ data variables.
 
 # Advantages
 - Synchronous message passing automatically provides synchronization between the threads
@@ -56,3 +56,4 @@ receives a message.
 
 # License
 **(TBD)**
+Copyright (C) 2024 by Richard Man. All rights reserved. The code will probably be released under an Open Source License later.
