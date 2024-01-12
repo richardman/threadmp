@@ -20,16 +20,11 @@ void Writer( ) {
 
         static int i = 0;
         std::string message = std::string( "Hello World!! " ) + std::to_string( i++ );
+        std::string reply_message;
 
-        size_t reply_length = 4;
-        char reply_message[reply_length+1];
-        reply_message[reply_length] = 0;
+        threadmp::Send( "reader", message, reply_message );
 
-        char buf[message.length() + 1];
-        strcpy( buf, message.c_str() );
-        threadmp::Send( "reader", message.length() + 1, buf, reply_length, reply_message );
-
-        std::cout << "writer Got reply, length: " << reply_length << " message '" << reply_message << "'" << std::endl;
+        std::cout << "writer Got reply, message '" << reply_message << "'" << std::endl;
     }
 
 }
@@ -47,16 +42,11 @@ void Writer2( ) {
 
         static int i = 0;
         std::string message = std::string( "I am Alive!!!! " ) + std::to_string( i++ );
+        std::string reply_message;
 
-        size_t reply_length = 10;
-        char reply_message[reply_length+1];
-        reply_message[reply_length] = 0;
+        threadmp::Send( "reader", message, reply_message );
 
-        char buf[message.length() + 1];
-        strcpy( buf, message.c_str() );
-        threadmp::Send( "reader", message.length() + 1, buf, reply_length, reply_message );
-
-        std::cout << "writer2 Got reply, length: " << reply_length << " message '" << reply_message << "'" << std::endl;
+        std::cout << "writer2 Got reply, message '" << reply_message << "'" << std::endl;
 
     }
 
@@ -74,16 +64,11 @@ void Writer3( ) {
 
         static int i = 0;
         std::string message = std::string( "Hello Darkness My Old Friends... " ) + std::to_string( i++ );
+        std::string reply_message;
 
-        size_t reply_length = 20;
-        char reply_message[reply_length+1];
-        reply_message[reply_length] = 0;
+        threadmp::Send( "reader", message, reply_message );
 
-        char buf[message.length() + 1];
-        strcpy( buf, message.c_str() );
-        threadmp::Send( "reader", message.length() + 1, buf, reply_length, reply_message );
-
-        std::cout << "writer3 Got reply, length: " << reply_length << " message '" << reply_message << "'" << std::endl;
+        std::cout << "writer3 Got reply, message '" << reply_message << "'" << std::endl;
 
     }
 
@@ -101,16 +86,11 @@ void Writer4( ) {
 
         static int i = 0;
         std::string message = std::string( "The philosopher is starving and it's all your fault " ) + std::to_string( i++ );
+        std::string reply_message;
 
-        size_t reply_length = 13;
-        char reply_message[reply_length+1];
-        reply_message[reply_length] = 0;
+        threadmp::Send( "reader", message, reply_message );
 
-        char buf[message.length() + 1];
-        strcpy( buf, message.c_str() );
-        threadmp::Send( "reader", message.length() + 1, buf, reply_length, reply_message );
-
-        std::cout << "writer4 Got reply, length: " << reply_length << " message '" << reply_message << "'" << std::endl;
+        std::cout << "writer4 Got reply, message '" << reply_message << "'" << std::endl;
 
     }
 
@@ -126,19 +106,16 @@ void Reader( ) {
         int sleep_factor = std::rand( ) & 0xF;
         std::this_thread::sleep_for( 10ms * sleep_factor );
 
-        const int buflen = 100;
-        char buffer[buflen];
-
         std::string sender_name;
-        size_t len = buflen;
-        threadmp::Receive( len, buffer, sender_name );
+        std::string message;
+        threadmp::Receive( message, sender_name );
 
-        std::cout << "Got message, length " << len << " message: '" << buffer << "'" << std::endl;
+        std::cout << "Got message: '" << message << "'" << std::endl;
 
         static int i = 0;
         std::string reply = std::string( "OK!" ) + std::to_string( i++ );
 
-        threadmp::Reply( sender_name, reply.length() + 1, reply.c_str() );
+        threadmp::Reply( sender_name, reply );
 
     }
 }

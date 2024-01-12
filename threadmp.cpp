@@ -44,11 +44,8 @@ namespace threadmp {
 
         std::string sender_name;
 
-        size_t receive_message_length = 0;
-        size_t reply_message_length = 0;
-
-        char *receive_message = nullptr;
-        char *reply_message = nullptr;      
+        std::string received_message;
+        std::string replied_message;      
 
         std::queue<std::shared_ptr<waiting_thread_t>> waiting_senders;
         thread_t( const std::string &a_name, std::thread::id a_thread_id ) : name( a_name ), thread_id( a_thread_id ) {}
@@ -94,21 +91,7 @@ namespace threadmp {
     }
 
 
-    int Send( const std::string &receiver_name, 
-            size_t message_length, char message[], 
-            const int32_t wait_ms ) {
-
-        size_t reply_length = 0;
-        char reply_buf[0];
-
-        return Send( receiver_name, message_length, message, reply_length, reply_buf, wait_ms );
-
-    }
-
-
-    int Send( const std::string &receiver_name, 
-            size_t message_length, char message[], 
-            size_t &reply_message_length, char reply_message[], const int32_t wait_ms ) {
+    int Send( const std::string &receiver_name, const std::string &message, std::string &reply_message, const int32_t wait_ms ) {
 
         int status;
         auto this_thread = FindThreadById( std::this_thread::get_id(), status );
@@ -136,11 +119,7 @@ namespace threadmp {
             if( debug ) std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " is in RECEIVE_WAIT. Will wake it up" << std::endl;
 
             receiver->sender_name = this_thread->name;
-            this_thread->reply_message_length = reply_message_length;
-            this_thread->reply_message = reply_message;
-
-            if( message_length > receiver->receive_message_length ) message_length = receiver->receive_message_length;
-            memcpy( receiver->receive_message, message, message_length );
+            receiver->received_message = message;
 
             std::unique_lock<std::mutex> lk_receive( receiver->cv_receive_mutex );
             lk_receive.unlock();
@@ -152,11 +131,7 @@ namespace threadmp {
             if( debug ) std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " in NORMAL state, wait for it to wake up" << std::endl;            
 
             receiver->sender_name = this_thread->name;
-            this_thread->reply_message_length = reply_message_length;
-            this_thread->reply_message = reply_message;
-
-            receiver->receive_message_length = message_length;
-            receiver->receive_message = message;
+            receiver->received_message = message;
 
         } else if( receiver->state == RECEIVE_PROCESSING || receiver->state == RECEIVE_PENDING ) {
 
@@ -177,7 +152,7 @@ namespace threadmp {
 
             if( debug ) std::cout << "  in SEND(" << this_thread->name << ") was SEND_BLOCKED, now unblocked. Resending..." << std::endl;
             // retry
-            return Send( receiver_name, message_length, message, reply_message_length, reply_message, wait_ms );
+            return Send( receiver_name, message, reply_message, wait_ms );
 
         } else {
 
@@ -197,13 +172,13 @@ namespace threadmp {
         lock_kernel.lock();
 
         if( debug ) std::cout << "  in SEND(" << this_thread->name << ") returing after REPLIED" << std::endl;
-        reply_message_length = this_thread->reply_message_length;
+        reply_message = this_thread->replied_message;
 
         return SUCCESS;
     }
 
 
-    int Receive( size_t &message_length, char message[], std::string &sender_name, const int32_t wait_ms ) {
+    int Receive( std::string &message, std::string &sender_name, const int32_t wait_ms ) {
 
         int status;
         auto this_thread = FindThreadById( std::this_thread::get_id(), status ); 
@@ -213,19 +188,14 @@ namespace threadmp {
         if( debug ) std::cout << "fcnRECEIVE in: " << this_thread->name << std::endl;
 
         if( this_thread->state == RECEIVE_PENDING ) {
-            if( message_length > this_thread->receive_message_length )
-                message_length = this_thread->receive_message_length;
-                
-            memcpy( message, this_thread->receive_message, message_length );
             this_thread->state = RECEIVE_PROCESSING;
             
             if( debug ) std::cout << "  in RECEIVE(" << this_thread->name << ") got pending message from: " << this_thread->sender_name << std::endl;
-            sender_name = this_thread->sender_name;        
+            sender_name = this_thread->sender_name;  
+            message = this_thread->received_message;      
             
         } else if( this_thread->state == NORMAL ) {
             this_thread->state = RECEIVE_WAIT;
-            this_thread->receive_message_length = message_length;
-            this_thread->receive_message = message;
            
             if( debug ) std::cout << "  in RECEIVE(" << this_thread->name << ") will wait for new message" << std::endl;
 
@@ -237,6 +207,7 @@ namespace threadmp {
 
             lock_kernel.lock();
             sender_name = this_thread->sender_name;
+            message = this_thread->received_message;             
 
         } else {
             std::cout << "!!ERROR RECEIVE " << this_thread->name << " BAD STATE " << this_thread->state << std::endl;
@@ -249,7 +220,7 @@ namespace threadmp {
     }
     
     
-    int Reply( const std::string sender_name, size_t message_length, const char message[] ) {
+    int Reply( const std::string &sender_name, const std::string &message ) {
 
         int status;
         auto sender_id = FindIdByName( sender_name, status);
@@ -268,10 +239,7 @@ namespace threadmp {
         if( this_thread->state == RECEIVE_PROCESSING && sender_thread->state == REPLY_WAIT ) {
             sender_thread->state = NORMAL;
 
-            if( sender_thread->reply_message_length > message_length )
-                sender_thread->reply_message_length = message_length;
-            
-            memcpy( sender_thread->reply_message, message, sender_thread->reply_message_length );
+            sender_thread->replied_message = message;
 
             if( debug ) std::cout << "  in REPLY(" << this_thread->name << ") sender was in REPLY_WAIT. Normal processing" << std::endl;
             
@@ -287,8 +255,6 @@ namespace threadmp {
             if( throw_exceptions ) throw; else return ERROR_REPLY_BAD_STATE;
         }
 
-        this_thread->state = NORMAL;
-
         // wake up any pending sender
         if( this_thread->waiting_senders.size() > 0 ) {
             auto waitee = this_thread->waiting_senders.front();
@@ -303,6 +269,11 @@ namespace threadmp {
 
             waitee->wait_cv.notify_one();
         }
+
+        this_thread->state = NORMAL;
+        this_thread->received_message.clear();
+        this_thread->replied_message.clear();
+        this_thread->sender_name.clear();
 
         return SUCCESS;
     }
