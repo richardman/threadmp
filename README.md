@@ -29,10 +29,12 @@ Messages are `std::string`. It is up to the communicating threads to interpret t
 A thread that uses this API must first register its name to the system. The name must be unique is the mean for the threads to identify message senders and receivers.
 
 `extern int threadmp::RegisterThread( const std::string &name );`
+
 registers the current thread into the system.
 -`name` : a string used to identify the thread. It must be unique within the system.
 
 `extern int threadmp::Send( const std::string &receiver_name, const std::string &message, std::string &reply_message, const int32_t wait_ms );`
+
 sends a message to a receiver and waits for the reply.
 - `receiver_name` : name of the receiver thread
 - `message` : message to send to the receiver
@@ -40,12 +42,14 @@ sends a message to a receiver and waits for the reply.
 - `wait_ms` : (not yet implemented) if the receiver does not receive the message by `wait_ms`, then the function returns with an error code. If `wait_ms` is zero, then the function does not time out.
 
 `extern int threadmp::Receive( std::string &message, std::string &sender_name, const int32_t wait_ms = 0 );`
+
 receives a message.
 -`message` : the message received
 -`sender_name` : the name of the sender. Needed by the Reply function.
 - `wait_ms` : (not yet implemented) if the receiver does not receive the message by `wait_ms`, then the function returns with an error code. If `wait_ms` is zero, then the function does not time out.
 
 `extern int threadmp::Reply( const std::string &sender_name, const std::string &message );`
+
 - `sender_name` : name of the sender
 - `message` : the reply message to the sender
 
