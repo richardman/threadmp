@@ -49,7 +49,7 @@ receives a message.
 - `sender_name` : name of the sender
 - `message` : the reply message to the sender
 
-# Limitions
+# Limitations
 - Once a thread receives a message, it must reply to the sender, otherwise, the sender will remain blocked
 - Between the `Receive` and `Reply` calls, the thread should not any other ThreadMP API functions. e.g. it should not call `Send` or `Receive` again until it replies to the first sender
 - Messages are copied between the internal buffers, and may present a performance issue if the message size is very large

@@ -12,6 +12,4 @@ namespace threadmp {
     int Receive( std::string &message, std::string &sender_name, const int32_t wait_ms = 0 );
     int Reply( const std::string &sender_name, const std::string &message );
 
-
-
 }
