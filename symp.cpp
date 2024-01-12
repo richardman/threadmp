@@ -11,7 +11,9 @@
 #include "./status_codes.h"
 #include "./symp.h"
 
-namespace symp {
+namespace  {
+
+    bool debug = false;
 
     enum thread_state_t {
         NORMAL, RECEIVE_WAIT, REPLY_WAIT, RECEIVE_PENDING, RECEIVE_PROCESSING, SEND_BLOCKED
@@ -98,13 +100,15 @@ namespace symp {
 
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
 
-        std::cout << "fcnSEND from: " << this_thread->name << " to: " << receiver_name << std::endl;
+        if( debug ) std::cout << "fcnSEND from: " << this_thread->name << " to: " << receiver_name << std::endl;
+
+        if( this_thread->state != NORMAL ) return ERROR_SEND_FAIL;
 
         if( receiver->state == RECEIVE_WAIT ) {
 
             receiver->state = RECEIVE_PROCESSING;
 
-            std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " is in RECEIVE_WAIT. Will wake it up" << std::endl;
+            if( debug ) std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " is in RECEIVE_WAIT. Will wake it up" << std::endl;
 
             receiver->sender_name = this_thread->name;
             this_thread->reply_message_length = reply_message_length;
@@ -120,7 +124,7 @@ namespace symp {
         } else if( receiver->state == NORMAL ) {
             receiver->state = RECEIVE_PENDING;
 
-            std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " in NORMAL state, wait for it to wake up" << std::endl;            
+            if( debug ) std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " in NORMAL state, wait for it to wake up" << std::endl;            
 
             receiver->sender_name = this_thread->name;
             this_thread->reply_message_length = reply_message_length;
@@ -131,7 +135,8 @@ namespace symp {
 
         } else if( receiver->state == RECEIVE_PROCESSING || receiver->state == RECEIVE_PENDING ) {
 
-            std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " in " << ( receiver->state == RECEIVE_PROCESSING ? "PROCESSING" : "PENDING" ) << " state " << std::endl << "  Will set self to SEND_BLOCKED" << std::endl;  
+            if( debug )  std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " in " << ( receiver->state == RECEIVE_PROCESSING ? "PROCESSING" : "PENDING" ) << " state " << std::endl << "  Will set self to SEND_BLOCKED" << std::endl;  
+            
             this_thread->state = SEND_BLOCKED;
             auto waitee = std::make_shared<waiting_thread_t>( this_thread );
 
@@ -145,7 +150,7 @@ namespace symp {
             if( this_thread->state != NORMAL ) throw;
             lock_kernel.unlock();
 
-            std::cout << "  in SEND(" << this_thread->name << ") was SEND_BLOCKED, now unblocked. Resending..." << std::endl;
+            if( debug ) std::cout << "  in SEND(" << this_thread->name << ") was SEND_BLOCKED, now unblocked. Resending..." << std::endl;
             // retry
             return Send( receiver_name, message_length, message, reply_message_length, reply_message, wait_ms );
 
@@ -161,13 +166,13 @@ namespace symp {
         std::unique_lock<std::mutex> lk_reply( this_thread->cv_reply_mutex );
         lock_kernel.unlock();
 
-        std::cout << "  in SEND(" << this_thread->name << ") waiting for reply" << std::endl;
+        if( debug ) std::cout << "  in SEND(" << this_thread->name << ") waiting for reply" << std::endl;
         this_thread->cv_reply.wait( lk_reply ); 
         lk_reply.unlock();
 
         lock_kernel.lock();
 
-        std::cout << "  in SEND(" << this_thread->name << ") returing after REPLIED" << std::endl;
+        if( debug ) std::cout << "  in SEND(" << this_thread->name << ") returing after REPLIED" << std::endl;
         reply_message_length = this_thread->reply_message_length;
 
         return SUCCESS;
@@ -178,7 +183,7 @@ namespace symp {
         auto this_thread = FindThreadById( std::this_thread::get_id() ); 
 
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
-        std::cout << "fcnRECEIVE in: " << this_thread->name << std::endl;
+        if( debug ) std::cout << "fcnRECEIVE in: " << this_thread->name << std::endl;
 
         if( this_thread->state == RECEIVE_PENDING ) {
             if( message_length > this_thread->receive_message_length )
@@ -187,22 +192,24 @@ namespace symp {
             memcpy( message, this_thread->receive_message, message_length );
             this_thread->state = RECEIVE_PROCESSING;
             
-            std::cout << "  in RECEIVE(" << this_thread->name << ") got pending message from: " << this_thread->sender_name << std::endl;
-
-            lock_kernel.unlock();            
+            if( debug ) std::cout << "  in RECEIVE(" << this_thread->name << ") got pending message from: " << this_thread->sender_name << std::endl;
+            sender_name = this_thread->sender_name;        
             
         } else if( this_thread->state == NORMAL ) {
             this_thread->state = RECEIVE_WAIT;
             this_thread->receive_message_length = message_length;
             this_thread->receive_message = message;
            
-            std::cout << "  in RECEIVE(" << this_thread->name << ") will wait for new message" << std::endl;
+            if( debug ) std::cout << "  in RECEIVE(" << this_thread->name << ") will wait for new message" << std::endl;
 
             std::unique_lock<std::mutex> lk_receive( this_thread->cv_receive_mutex );
             lock_kernel.unlock();
 
             this_thread->cv_receive.wait( lk_receive );        
             lk_receive.unlock();
+
+            lock_kernel.lock();
+            sender_name = this_thread->sender_name;
 
         } else {
             std::cout << "!!ERROR RECEIVE " << this_thread->name << " BAD STATE " << this_thread->state << std::endl;
@@ -211,10 +218,7 @@ namespace symp {
             return ERROR_RECEIVE_FAIL;
         }
 
-        lock_kernel.lock();
-        sender_name = this_thread->sender_name;
-
-        std::cout << "  in RECEIVE(" << this_thread->name << ") returning after copied message from: " << sender_name << std::endl;
+        if( debug ) std::cout << "  in RECEIVE(" << this_thread->name << ") returning after copied message from: " << sender_name << std::endl;
 
         return SUCCESS;
     }
@@ -227,7 +231,7 @@ namespace symp {
         auto this_thread = FindThreadById( std::this_thread::get_id() );
 
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
-        std::cout << "fcnREPLY from: " << this_thread->name << " replying to: " << sender_name << std::endl;
+        if( debug ) std::cout << "fcnREPLY from: " << this_thread->name << " replying to: " << sender_name << std::endl;
 
         if( this_thread->state == RECEIVE_PROCESSING && sender_thread->state == REPLY_WAIT ) {
             sender_thread->state = NORMAL;
@@ -237,11 +241,11 @@ namespace symp {
             
             memcpy( sender_thread->reply_message, message, sender_thread->reply_message_length );
 
-            std::cout << "  in REPLY(" << this_thread->name << ") sender was in REPLY_WAIT. Normal processing" << std::endl;
+            if( debug ) std::cout << "  in REPLY(" << this_thread->name << ") sender was in REPLY_WAIT. Normal processing" << std::endl;
 
         } else {
 
-            std::cout << "!!ERROR REPLY " << sender_name << " BAD STATE this thread state " << this_thread->state << " sender state " << sender_thread->state << std::endl;
+            if( debug ) std::cout << "!!ERROR REPLY " << sender_name << " BAD STATE this thread state " << this_thread->state << " sender state " << sender_thread->state << std::endl;
 
             throw;
             return ERROR_REPLY_FAIL;
@@ -254,13 +258,14 @@ namespace symp {
 
         sender_thread->cv_reply.notify_one(); 
 
+        // wake up any pending sender
         if( this_thread->waiting_senders.size() > 0 ) {
             auto waitee = this_thread->waiting_senders.front();
             this_thread->waiting_senders.pop();
 
             if( waitee->sender->state != SEND_BLOCKED ) throw;
 
-            std::cout << "  in REPLY(" << this_thread->name << ") waking up SEND_BLOCKED sender: " << waitee->sender->name << std::endl;
+            if( debug ) std::cout << "  in REPLY(" << this_thread->name << ") waking up SEND_BLOCKED sender: " << waitee->sender->name << std::endl;
             waitee->sender->state = NORMAL;
             std::unique_lock<std::mutex> lock_wait( waitee->wait_mutex );
             lock_wait.unlock();
