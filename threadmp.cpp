@@ -14,6 +14,7 @@
 namespace threadmp {
 
     bool debug = false;
+    bool throw_exceptions = false;
 
     enum thread_state_t {
         NORMAL, RECEIVE_WAIT, REPLY_WAIT, RECEIVE_PENDING, RECEIVE_PROCESSING, SEND_BLOCKED
@@ -58,19 +59,36 @@ namespace threadmp {
 
     std::mutex kernel_mutex;
 
-    static inline std::shared_ptr<thread_t> FindThreadById( std::thread::id id ) {
+    static inline std::shared_ptr<thread_t> FindThreadById( std::thread::id id, int &status ) {
+        status = SUCCESS;
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
         auto find_this_thread_iter = id_to_thread_map.find( id );
-        if( find_this_thread_iter == id_to_thread_map.end() ) throw;
+        if( find_this_thread_iter == id_to_thread_map.end() ) {
+            if( throw_exceptions ) 
+                throw; 
+            else { 
+                status = ERROR_THREAD_NOT_REGISTERED; 
+                return nullptr; 
+            };
+        }
 
         return find_this_thread_iter->second;
     }
 
 
-    static inline std::thread::id FindIdByName( const std::string &name ) {
+    static inline std::thread::id FindIdByName( const std::string &name, int &status ) {
+        status = SUCCESS;
+
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );        
         auto find_id_iter = name_to_id_map.find( name );
-        if( find_id_iter == name_to_id_map.end() ) throw;
+        if( find_id_iter == name_to_id_map.end() ) {
+            if( throw_exceptions ) 
+                throw; 
+            else { 
+                status = ERROR_THREAD_NOT_REGISTERED; 
+                return std::thread::id( 0 ); 
+            };
+        }
 
         return find_id_iter->second;
     }
@@ -92,11 +110,19 @@ namespace threadmp {
             size_t message_length, char message[], 
             size_t &reply_message_length, char reply_message[], const int32_t wait_ms ) {
 
-        auto this_thread = FindThreadById( std::this_thread::get_id() );
-        auto receiver_id = FindIdByName( receiver_name );
+        int status;
+        auto this_thread = FindThreadById( std::this_thread::get_id(), status );
+        if( status != SUCCESS ) return status;
 
-        auto receiver = FindThreadById( receiver_id );
-        if( receiver->thread_id != receiver_id ) throw;
+        auto receiver_id = FindIdByName( receiver_name, status );
+        if( status != SUCCESS ) return status;
+
+        auto receiver = FindThreadById( receiver_id, status );
+        if( status != SUCCESS ) return status;
+
+        if( receiver->thread_id != receiver_id ) {
+            if( throw_exceptions ) throw; else return ERROR_INTERNAL;
+        }
 
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
 
@@ -105,7 +131,6 @@ namespace threadmp {
         if( this_thread->state != NORMAL ) return ERROR_SEND_FAIL;
 
         if( receiver->state == RECEIVE_WAIT ) {
-
             receiver->state = RECEIVE_PROCESSING;
 
             if( debug ) std::cout << "  in SEND(" << this_thread->name << ") receiver " << receiver_name << " is in RECEIVE_WAIT. Will wake it up" << std::endl;
@@ -157,8 +182,7 @@ namespace threadmp {
         } else {
 
             std::cout << "!!ERROR SEND " << receiver_name << " BAD STATE " << receiver->state << std::endl;
-            throw;
-            return ERROR_SEND_FAIL;
+            return ERROR_SENDER_BAD_STATE;
         }
 
         this_thread->state = REPLY_WAIT;
@@ -178,9 +202,12 @@ namespace threadmp {
         return SUCCESS;
     }
 
+
     int Receive( size_t &message_length, char message[], std::string &sender_name, const int32_t wait_ms ) {
 
-        auto this_thread = FindThreadById( std::this_thread::get_id() ); 
+        int status;
+        auto this_thread = FindThreadById( std::this_thread::get_id(), status ); 
+        if( status != SUCCESS ) return status;        
 
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
         if( debug ) std::cout << "fcnRECEIVE in: " << this_thread->name << std::endl;
@@ -213,9 +240,7 @@ namespace threadmp {
 
         } else {
             std::cout << "!!ERROR RECEIVE " << this_thread->name << " BAD STATE " << this_thread->state << std::endl;
-            throw;
-
-            return ERROR_RECEIVE_FAIL;
+            if( throw_exceptions ) throw; else return ERROR_RECEIVER_BAD_STATE;
         }
 
         if( debug ) std::cout << "  in RECEIVE(" << this_thread->name << ") returning after copied message from: " << sender_name << std::endl;
@@ -226,11 +251,18 @@ namespace threadmp {
     
     int Reply( const std::string sender_name, size_t message_length, const char message[] ) {
 
-        auto sender_id = FindIdByName( sender_name);
-        auto sender_thread = FindThreadById( sender_id ); 
-        auto this_thread = FindThreadById( std::this_thread::get_id() );
+        int status;
+        auto sender_id = FindIdByName( sender_name, status);
+        if( status != SUCCESS ) return status;
+        
+        auto sender_thread = FindThreadById( sender_id, status ); 
+        if( status != SUCCESS ) return status;
+
+        auto this_thread = FindThreadById( std::this_thread::get_id(), status );
+        if( status != SUCCESS ) return status;
 
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
+
         if( debug ) std::cout << "fcnREPLY from: " << this_thread->name << " replying to: " << sender_name << std::endl;
 
         if( this_thread->state == RECEIVE_PROCESSING && sender_thread->state == REPLY_WAIT ) {
@@ -242,21 +274,20 @@ namespace threadmp {
             memcpy( sender_thread->reply_message, message, sender_thread->reply_message_length );
 
             if( debug ) std::cout << "  in REPLY(" << this_thread->name << ") sender was in REPLY_WAIT. Normal processing" << std::endl;
+            
+            std::unique_lock<std::mutex> lk_reply( sender_thread->cv_reply_mutex );
+            lk_reply.unlock();
+
+            sender_thread->cv_reply.notify_one();             
 
         } else {
 
             if( debug ) std::cout << "!!ERROR REPLY " << sender_name << " BAD STATE this thread state " << this_thread->state << " sender state " << sender_thread->state << std::endl;
 
-            throw;
-            return ERROR_REPLY_FAIL;
+            if( throw_exceptions ) throw; else return ERROR_REPLY_BAD_STATE;
         }
 
         this_thread->state = NORMAL;
-
-        std::unique_lock<std::mutex> lk_reply( sender_thread->cv_reply_mutex );
-        lk_reply.unlock();
-
-        sender_thread->cv_reply.notify_one(); 
 
         // wake up any pending sender
         if( this_thread->waiting_senders.size() > 0 ) {
@@ -285,13 +316,13 @@ namespace threadmp {
         auto find_thread_iter = id_to_thread_map.find( thread_id );
         if( find_thread_iter != id_to_thread_map.end() ) {
             if( find_thread_iter->second->name == name ) return SUCCESS;
-            return ERROR_THREAD_ALREADY_REGISTERED;
+            if( throw_exceptions ) throw; else return ERROR_THREAD_ALREADY_REGISTERED;
         }
 
         auto find_id_iter = name_to_id_map.find( name );
         if( find_id_iter != name_to_id_map.end() ) {
             if( find_id_iter->second == thread_id ) return SUCCESS;
-            return ERROR_NAME_ALREADY_REGISTERED;
+            if( throw_exceptions ) throw; else return ERROR_NAME_ALREADY_REGISTERED;
         }
 
         name_to_id_map.emplace( name, thread_id );
@@ -307,10 +338,14 @@ namespace threadmp {
         std::unique_lock<std::mutex> lock_kernel( kernel_mutex );
 
         auto find_thread_iter = id_to_thread_map.find( thread_id );
-        if( find_thread_iter == id_to_thread_map.end() ) return ERROR_THREAD_NOT_REGISTERED;
+        if( find_thread_iter == id_to_thread_map.end() ) {
+            if( throw_exceptions ) throw; else return ERROR_THREAD_NOT_REGISTERED;
+        }
       
         auto find_id_iter = name_to_id_map.find( find_thread_iter->second->name );
-        if( find_id_iter == name_to_id_map.end() ) return ERROR_INTERNAL;
+        if( find_id_iter == name_to_id_map.end() ) {
+            if( throw_exceptions ) throw; else return ERROR_INTERNAL;
+        }
 
         id_to_thread_map.erase( find_thread_iter );
         name_to_id_map.erase( find_id_iter );
